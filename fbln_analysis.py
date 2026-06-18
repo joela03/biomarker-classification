@@ -22,7 +22,6 @@ from sklearn.calibration import calibration_curve
 import os
 import shap
 import warnings
-import lifelines
 
 warnings.filterwarnings('ignore')
 
@@ -47,7 +46,7 @@ plt.rcParams.update({
     'axes.labelsize':   11,
 })
 
-# DATA LOADING — Full EGA/cBioPortal METABRIC Dataset
+# Data Loading
 
 TARGET_GENES = ['FBLN1', 'FBLN2', 'FBLN5']
 
@@ -71,7 +70,7 @@ fbln_expr = fbln_expr.rename(columns={
 # Confirm all three genes loaded
 missing = [g for g in TARGET_GENES if g not in fbln_expr.columns]
 if missing:
-    raise ValueError(f"Genes not found in expression matrix: {missing}. Check Hugo_Symbol spelling.")
+    raise ValueError(f"Genes not found in expression matrix: {missing}.")
 
 # Load clinical data
 clin = pd.read_csv('brca_metabric/data_clinical_patient.txt', sep='\t', comment='#', low_memory=False)
@@ -102,10 +101,10 @@ df = df.dropna(subset=['FBLN1', 'FBLN2', 'FBLN5', 'survival_months', 'death_even
 df = df.reset_index(drop=True)
 N = len(df)
 
-print(f"Dataset loaded: {N} patients with complete FBLN1/2/4 expression and survival data")
+print(f"Dataset loaded: {N} patients with  FBLN1/2/4 expression and survival data")
 print(f"Columns available: {list(df.columns)}")
 
-# UNCERTAINTY CATEGORISATION LOGIC
+# Seperate patients by uncertainty
 
 FBLN1_MED = df['FBLN1'].median()
 FBLN2_MED = df['FBLN2'].median()
@@ -115,8 +114,7 @@ FBLN1_STD = df['FBLN1'].std()
 FBLN2_STD = df['FBLN2'].std()
 FBLN5_STD = df['FBLN5'].std()
 
-# Boundary = 0.5 SD for each gene
-# Meaning: "near median" = within half a standard deviation
+# Finding boundary - within half a standard deviation of the median
 BOUNDARY_FBLN1 = 0.5 * FBLN1_STD
 BOUNDARY_FBLN2 = 0.5 * FBLN2_STD
 BOUNDARY_FBLN5 = 0.5 * FBLN5_STD
@@ -153,9 +151,8 @@ def assign_category(row):
 
 df['category'] = df.apply(assign_category, axis=1)
 
-print("=" * 55)
+# Split patients by category based on uncertainty boundaries
 print("  UNCERTAINTY CATEGORY DISTRIBUTION")
-print("=" * 55)
 cat_counts = df['category'].value_counts()
 for cat, count in cat_counts.items():
     pct = count / N * 100
@@ -275,10 +272,8 @@ plt.savefig('outputs/fig4_fbln_interactivity.png', dpi=150, bbox_inches='tight')
 plt.close()
 
 
-# RANDOM FOREST — Initial Model
-print("\n" + "=" * 55)
+# Naive Random Forest Model
 print("  RANDOM FOREST CLASSIFIER — INITIAL RESULTS")
-print("=" * 55)
 
 le = LabelEncoder()
 X = df[['FBLN1', 'FBLN2', 'FBLN5']].values
@@ -409,9 +404,7 @@ plt.close()
 from lifelines import KaplanMeierFitter, CoxPHFitter
 from lifelines.statistics import logrank_test
 
-print("=" * 55)
 print("  INDIVIDUAL BIOMARKER SURVIVAL ANALYSIS")
-print("=" * 55)
 
 for gene in ['FBLN1', 'FBLN2', 'FBLN5']:
     median_val = df[gene].median()
