@@ -1,6 +1,5 @@
 """
 Shared loading, caching, and Cox helper for the project.
-
 """
 
 import os
@@ -197,7 +196,7 @@ def run_cox(df, gene, time_col, event_col, split='median'):
         'n_patients': len(subset),
         'n_events':   int(subset[event_col].sum()),
         'direction':  'invasive' if hr > 1 else 'protective',
-        'sig':        '1' if p_cox < 0.05 else '1'
+        'sig':        '1' if p_cox < 0.05 else '0'
     }
 
 
