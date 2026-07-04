@@ -13,8 +13,8 @@ TARGET_GENES = ['FBLN1', 'FBLN2', 'FBLN5']
 
 METABRIC_MRNA     = 'brca_metabric/data_mrna_illumina_microarray.txt'
 METABRIC_CLINICAL = 'brca_metabric/data_clinical_patient.txt'
-TCGA_MRNA         = 'brca_tcga/data_mrna_agilent_microarray'
-TCGA_CLINICAL     = 'brca_tcga/data_clinical_patient'
+TCGA_MRNA         = 'brca_tcga/data_mrna_agilent_microarray.txt'
+TCGA_CLINICAL     = 'brca_tcga/data_clinical_patient.txt'
 
 METABRIC_CACHE = 'data/processed/metabric_fbln.parquet'
 TCGA_CACHE     = 'data/processed/tcga_fbln.parquet'
