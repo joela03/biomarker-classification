@@ -19,16 +19,21 @@ METABRIC_CACHE = 'data/processed/metabric_fbln.parquet'
 TCGA_CACHE     = 'data/processed/tcga_fbln.parquet'
 
 CATEGORY_COLOURS = {
-    'HIGH_CONFIDENCE':    '#2ecc71',
-    'AMBIGUITY':          '#f39c12',
-    'CONTROVERSY':        '#e74c3c',
-    'DATA_INSUFFICIENCY': '#9b59b6',
-    'OUT_OF_SCOPE':       '#95a5a6',
+    'HIGH_CONFIDENCE_FAVOURABLE' : '#2ecc71',
+    'HIGH_CONFIDENCE_UNFAVOURABLE': '#e67e22',
+    'AMBIGUITY'                  : '#f39c12',
+    'CONTROVERSY'                : '#e74c3c',
+    'DATA_INSUFFICIENCY'         : '#9b59b6',
+    'OUT_OF_SCOPE'               : '#95a5a6',
 }
 
 CATEGORY_ORDER = [
-    'HIGH_CONFIDENCE', 'AMBIGUITY', 'CONTROVERSY',
-    'DATA_INSUFFICIENCY', 'OUT_OF_SCOPE'
+    'HIGH_CONFIDENCE_FAVOURABLE',
+    'HIGH_CONFIDENCE_UNFAVOURABLE',
+    'AMBIGUITY',
+    'CONTROVERSY',
+    'DATA_INSUFFICIENCY',
+    'OUT_OF_SCOPE'
 ]
 
 BOUNDARY_MULTIPLIER = 0.5

@@ -54,6 +54,7 @@ def assign_category(row):
     f1 = row['FBLN1']
     f2 = row['FBLN2']
     f5 = row['FBLN5']
+    subtype = row.get('subtype', None)
 
     med1, std1 = stats['FBLN1']['med'], stats['FBLN1']['std']
     med2, std2 = stats['FBLN2']['med'], stats['FBLN2']['std']
@@ -82,11 +83,16 @@ def assign_category(row):
     poor_signals = sum([f1 > med1, f5 > med5])
     if f2 > med2 and poor_signals >= 1:
         return 'CONTROVERSY'
-
-    return 'HIGH_CONFIDENCE'
+    aggressive = {'Basal', 'Her2', 'LumB'}
+    if subtype in aggressive:
+        return 'HIGH_CONFIDENCE_UNFAVOURABLE'
+    return 'HIGH_CONFIDENCE_FAVOURABLE'
 
 
 df['category'] = df.apply(assign_category, axis=1)
+df[['PATIENT_ID', 'category']].to_parquet(
+    'data/processed/metabric_categories.parquet', index=False
+)
 
 cat_counts = df['category'].value_counts()
 print("Category distribution:")
