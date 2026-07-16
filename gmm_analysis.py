@@ -102,13 +102,18 @@ for cluster in range(1, best_n):
 fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 fig.suptitle('GMM Clustering — FBLN Expression Space', fontsize=13, fontweight='bold')
 
-axes[0].plot(list(n_range), bic_scores, marker='o', color='#2c3e50', linewidth=2)
-axes[0].axvline(best_n, color='#e74c3c', linestyle='--', linewidth=1.5,
-                label=f'Best n={best_n}')
+axes[0].plot(list(n_range), bic_scores, marker='o', color='#2c3e50',
+             linewidth=2, label='BIC')
+axes[0].plot(list(n_range), aic_scores, marker='s', color='#e74c3c',
+             linewidth=2, linestyle='--', label='AIC')
+axes[0].axvline(best_n_bic, color='#2c3e50', linestyle=':',
+                linewidth=1.5, label=f'BIC min n={best_n_bic}')
+axes[0].axvline(best_n, color='#e74c3c', linestyle='--',
+                linewidth=1.5, label=f'AIC selects n={best_n}')
 axes[0].set_xlabel('Number of Components')
-axes[0].set_ylabel('BIC')
-axes[0].set_title('BIC by Component Count')
-axes[0].legend()
+axes[0].set_ylabel('Score')
+axes[0].set_title('BIC and AIC by Component Count')
+axes[0].legend(fontsize=8)
 
 # Scatter: FBLN1 vs FBLN2, coloured by GMM cluster
 scatter_colors = plt.cm.tab10(np.linspace(0, 0.8, best_n))
