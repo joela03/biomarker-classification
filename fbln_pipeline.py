@@ -300,12 +300,13 @@ axes[0].set_title('Mean Feature Importance per Category')
 axes[0].legend(title='Category', fontsize=8, bbox_to_anchor=(1, 1))
 axes[0].tick_params(axis='x', rotation=0)
 
-example_cats   = ['HIGH_CONFIDENCE', 'CONTROVERSY', 'AMBIGUITY']
+example_cats = ['HIGH_CONFIDENCE_FAVOURABLE', 'HIGH_CONFIDENCE_UNFAVOURABLE',
+                  'CONTROVERSY', 'AMBIGUITY']
 y_test_labels  = le.inverse_transform(y_test)
-example_colors = ['#2ecc71', '#e74c3c', '#f39c12']
+example_colors = ['#2ecc71', '#e67e22', '#e74c3c', '#f39c12']
 gene_colors    = ['#3498db', '#e67e22', '#1abc9c']
-bar_height     = 0.25
-y_positions    = [0.7, 0.4, 0.1]
+bar_height     = 0.2
+y_positions    = [0.78, 0.54, 0.30, 0.06]
 
 ax2 = axes[1]
 ax2.set_title('SHAP Contributions — Example Patients')
@@ -320,14 +321,16 @@ for i, (cat, ypos, col) in enumerate(zip(example_cats, y_positions, example_colo
     left    = 0
     for gene, val, gcol in zip(TARGET_GENES, sv, gene_colors):
         ax2.barh(ypos, val, height=bar_height, left=left, color=gcol,
-                 edgecolor='white', linewidth=0.8, label=gene if i == 0 else '')
+                 edgecolor='white', linewidth=0.8,
+                 label=gene if i == 0 else '')
         if abs(val) > 0.01:
             ax2.text(left + val/2, ypos, f'{gene}\n{val:+.2f}',
-                     ha='center', va='center', fontsize=7.5,
+                     ha='center', va='center', fontsize=7,
                      fontweight='bold', color='white')
         left += val
-    ax2.text(-0.35, ypos, cat, ha='right', va='center',
-             fontsize=9, fontweight='bold', color=col)
+    display_name = cat.replace('HIGH_CONFIDENCE_', 'HC_')
+    ax2.text(-0.35, ypos, display_name, ha='right', va='center',
+             fontsize=8, fontweight='bold', color=col)
 
 ax2.axvline(0, color='black', linewidth=1)
 ax2.set_xlabel('SHAP Contribution')
