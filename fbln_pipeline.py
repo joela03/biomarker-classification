@@ -100,7 +100,7 @@ for cat in CATEGORY_ORDER:
     n = cat_counts.get(cat, 0)
     print(f"  {cat:<22} {n:>4}  ({n/N*100:.1f}%)")
 
-non_hc = N - cat_counts.get('HIGH_CONFIDENCE', 0)
+non_hc = N - cat_counts.get('HIGH_CONFIDENCE_FAVOURABLE', 0) - cat_counts.get('HIGH_CONFIDENCE_UNFAVOURABLE', 0)
 print(f"\n  {non_hc} patients ({non_hc/N*100:.1f}%) outside HIGH_CONFIDENCE")
 
 # Triangulation statistics - checks how many patients have a single gene or all three genes near the
@@ -199,9 +199,10 @@ plt.savefig('outputs/fig3_kaplan_meier.png', dpi=150, bbox_inches='tight')
 plt.close()
 
 # Pairwise log-rank tests between categories
-print("\nBetween-category log-rank tests (vs HIGH_CONFIDENCE):")
-ref = df[df['category'] == 'HIGH_CONFIDENCE']
-for cat in ['AMBIGUITY', 'CONTROVERSY', 'DATA_INSUFFICIENCY', 'OUT_OF_SCOPE']:
+print("\nBetween-category log-rank tests (vs HIGH_CONFIDENCE_FAVOURABLE):")
+ref = df[df['category'] == 'HIGH_CONFIDENCE_FAVOURABLE']
+for cat in ['HIGH_CONFIDENCE_UNFAVOURABLE', 'AMBIGUITY', 'CONTROVERSY', 
+            'DATA_INSUFFICIENCY', 'OUT_OF_SCOPE']:
     grp = df[df['category'] == cat]
     if len(grp) < 10:
         continue
