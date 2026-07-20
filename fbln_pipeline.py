@@ -212,7 +212,7 @@ for cat in ['HIGH_CONFIDENCE_UNFAVOURABLE', 'AMBIGUITY', 'CONTROVERSY',
         event_observed_B=grp['os_event']
     )
     sig = 'significant' if result.p_value < 0.05 else 'insignificant'
-    print(f"  HIGH_CONFIDENCE vs {cat:<22} p={result.p_value:.4f} {sig}")
+    print(f"  HIGH_CONFIDENCE_FAVOURABLE vs {cat:<22} p={result.p_value:.4f} {sig}")
 
 
 # Figure 4: Correlation heatmap + controversy scatter
