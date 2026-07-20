@@ -1,0 +1,233 @@
+"""
+Data-driven rule induction for a protein family.
+"""
+
+import numpy as np
+import pandas as pd
+from data_loader import run_cox
+from scipy.optimize import brentq
+from sklearn.metrics import adjusted_rand_score
+from sklearn.preprocessing import LabelEncoder
+from lifelines.statistics import logrank_test
+from fbln_pipeline import make_assign_category
+
+def infer_gene_roles(df, genes, time_col='os_months', event_col='os_event'):
+    """
+    Run Cox models per gene to infer protective vs invasive direction.
+    """
+    roles = {}
+    for gene in genes:
+        result = run_cox(df, gene, time_col, event_col, split='median')
+        if result is None:
+            roles[gene] = 'unclear'
+        elif result['HR'] < 1 and result['p_cox'] < 0.05:
+            roles[gene] = 'protective'
+        elif result['HR'] > 1 and result['p_cox'] < 0.05:
+            roles[gene] = 'invasive'
+        else:
+            roles[gene] = 'unclear'
+    return roles
+
+
+def infer_controversy_pairs(df, genes, roles):
+    """
+    Identify gene pairs where one protective and one invasive gene
+    show positive expression correlation - creating genuine controversy.
+    """
+    protective = [g for g, r in roles.items() if r == 'protective']
+    invasive   = [g for g, r in roles.items() if r == 'invasive']
+    
+    controversy_pairs = []
+    for p in protective:
+        for i in invasive:
+            corr = df[p].corr(df[i])
+            # Positively correlated opposing signals = controversy space
+            if corr > 0.3:
+                controversy_pairs.append((p, i, round(corr, 3)))
+    
+    return controversy_pairs
+
+
+def calibrate_boundary(df, genes, target_ambiguity_pct=0.10):
+    """
+    Find the SD multiplier that produces approximately target_ambiguity_pct
+    """
+    
+    def ambiguity_pct(multiplier):
+        near = pd.Series([True] * len(df))
+        for gene in genes:
+            med = df[gene].median()
+            std = df[gene].std()
+            near = near & (abs(df[gene] - med) < multiplier * std)
+        return near.mean() - target_ambiguity_pct
+    
+    try:
+        optimal = brentq(ambiguity_pct, 0.1, 1.5)
+    except ValueError:
+        optimal = 0.5  # fallback if no solution in range
+    
+    return round(optimal, 3)
+
+
+def infer_data_insufficiency(df, genes, roles):
+    """
+    DATA_INSUFFICIENCY = simultaneously extreme low expression on
+    invasive genes
+    """
+    invasive_genes = [g for g, r in roles.items() if r == 'invasive']
+    if not invasive_genes:
+        invasive_genes = genes  # fallback if roles unclear
+    
+    thresholds = {g: df[g].quantile(0.05) for g in invasive_genes}
+    return thresholds
+
+
+def build_framework_config(df, genes,
+                            time_col='os_months',
+                            event_col='os_event',
+                            target_ambiguity_pct=0.10):
+    """
+    Master function. Given a dataframe with any protein family,
+    returns a config dict that assign_category can consume.
+    """
+    print(f"Inferring rules for gene family: {genes}")
+    
+    # Gene roles from survival
+    roles = infer_gene_roles(df, genes, time_col, event_col)
+    print(f"  Inferred roles: {roles}")
+    
+    # Controversy pairs
+    controversy_pairs = infer_controversy_pairs(df, genes, roles)
+    print(f"  Controversy pairs: {controversy_pairs}")
+    
+    # Boundary calibration
+    boundary_multiplier = calibrate_boundary(df, genes, target_ambiguity_pct)
+    print(f"  Boundary multiplier: {boundary_multiplier} SD")
+    
+    # Data insufficiency thresholds
+    di_thresholds = infer_data_insufficiency(df, genes, roles)
+    print(f"  DATA_INSUFFICIENCY thresholds: {di_thresholds}")
+    
+    # Out of scope — always 3.5 SD, gene-agnostic
+    oos_multiplier = 3.5
+    
+    config = {
+        'genes':                genes,
+        'roles':                roles,
+        'controversy_pairs':    controversy_pairs,
+        'boundary_multiplier':  boundary_multiplier,
+        'di_thresholds':        di_thresholds,
+        'oos_multiplier':       oos_multiplier,
+        'time_col':             time_col,
+        'event_col':            event_col,
+    }
+    
+    return config
+
+def compare_rule_sets(df, genes, config, original_categories,
+                      time_col='os_months', event_col='os_event'):
+    """
+    Compare original hand-written rule categories against
+    data-driven inferred categories from induction config.
+    """
+
+    # Build inferred category assignments using config
+    assign_fn = make_assign_category(df, config)
+    df = df.copy()
+    df['category_inferred'] = df.apply(assign_fn, axis=1)
+    df['category_original'] = original_categories
+
+    # Category distribution comparison
+    print("Category distribution comparison:")
+    print(f"\n  {'Category':<35} {'Original':>10} {'Inferred':>10}")
+    print("  " + "-" * 57)
+
+    all_cats = sorted(set(df['category_original'].unique()) |
+                      set(df['category_inferred'].unique()))
+    orig_counts = df['category_original'].value_counts()
+    inf_counts  = df['category_inferred'].value_counts()
+    N = len(df)
+
+    for cat in all_cats:
+        orig_pct = orig_counts.get(cat, 0) / N * 100
+        inf_pct  = inf_counts.get(cat, 0) / N * 100
+        diff     = inf_pct - orig_pct
+        diff_str = f"({diff:+.1f}%)" if abs(diff) > 0.5 else ""
+        print(f"  {cat:<35} {orig_pct:>9.1f}%  {inf_pct:>9.1f}%  {diff_str}")
+
+    # Agreement between rule sets
+    le = LabelEncoder()
+    orig_encoded = le.fit_transform(df['category_original'])
+    inf_encoded  = LabelEncoder().fit_transform(df['category_inferred'])
+    ari   = adjusted_rand_score(orig_encoded, inf_encoded)
+
+    from sklearn.metrics import cohen_kappa_score
+    # Align encodings
+    all_labels = sorted(set(df['category_original']) |
+                        set(df['category_inferred']))
+    label_map  = {l: i for i, l in enumerate(all_labels)}
+    orig_mapped = df['category_original'].map(label_map)
+    inf_mapped  = df['category_inferred'].map(label_map)
+    kappa = cohen_kappa_score(orig_mapped, inf_mapped)
+
+    print(f"\n  Agreement between original and inferred rules:")
+    print(f"    Adjusted Rand Index : {ari:.3f}")
+    print(f"    Cohen's Kappa       : {kappa:.3f}")
+    print(f"    Interpretation: ", end="")
+    if kappa > 0.6:
+        print("strong agreement — inferred rules replicate original reasoning")
+    elif kappa > 0.4:
+        print("moderate agreement — broadly consistent with some boundary differences")
+    elif kappa > 0.2:
+        print("fair agreement — inferred rules capture similar but not identical structure")
+    else:
+        print("weak agreement — inferred rules diverge from original reasoning")
+
+    # Cross-tabulation (checking disagreement)
+    print("\n  Cross-tabulation (original rows vs inferred columns):")
+    cross = pd.crosstab(df['category_original'],
+                        df['category_inferred'],
+                        margins=True, margins_name='Total')
+    print(cross.to_string())
+
+    # Survival separation
+    print("\n  Survival separation comparison:")
+    print(f"  {'Category':<35} {'Original HR':>12} {'Inferred HR':>12}")
+    print("  " + "-" * 62)
+
+    for cat in all_cats:
+        if cat in ['OUT_OF_SCOPE', 'DATA_INSUFFICIENCY']:
+            continue
+
+        orig_sub = df[df['category_original'] == cat]
+        inf_sub  = df[df['category_inferred'] == cat]
+
+        if len(orig_sub) < 10 or len(inf_sub) < 10:
+            continue
+
+        # Event rate as a simple survival proxy
+        orig_rate = orig_sub[event_col].mean()
+        inf_rate  = inf_sub[event_col].mean()
+
+        print(f"  {cat:<35} "
+              f"event={orig_rate:.1%}    "
+              f"event={inf_rate:.1%}")
+
+    # Pairwise log-rank
+    print("\n  Log-rank: HC_FAVOURABLE vs HC_UNFAVOURABLE")
+    for label_col, name in [('category_original', 'Original'),
+                             ('category_inferred', 'Inferred')]:
+        fav   = df[df[label_col] == 'HIGH_CONFIDENCE_FAVOURABLE']
+        unfav = df[df[label_col] == 'HIGH_CONFIDENCE_UNFAVOURABLE']
+        if len(fav) < 10 or len(unfav) < 10:
+            print(f"    {name}: insufficient patients")
+            continue
+        result = logrank_test(
+            fav[time_col], unfav[time_col],
+            event_observed_A=fav[event_col],
+            event_observed_B=unfav[event_col]
+        )
+        sig = 'significiant' if result.p_value < 0.05 else 'insignificant'
+        print(f"    {name}: p={result.p_value:.4f} {sig}")
+
+    return df
