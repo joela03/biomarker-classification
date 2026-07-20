@@ -13,6 +13,7 @@ from sklearn.metrics import adjusted_rand_score
 from sklearn.preprocessing import LabelEncoder
 
 from data_loader import load_metabric, TARGET_GENES, CATEGORY_COLOURS, CATEGORY_ORDER
+from sklearn.metrics import cohen_kappa_score
 
 warnings.filterwarnings('ignore')
 
@@ -162,3 +163,11 @@ for cluster in sorted(df['gmm_label'].unique()):
     print(f"  Cluster {cluster} (n={len(sub)}): "
           f"event rate={event_rate:.1%}, "
           f"median survival={median_survival:.0f} months")
+    
+# Kohens Cappa Comparison
+kappa = cohen_kappa_score(
+    df['category'].map({c: i for i, c in enumerate(CATEGORY_ORDER)}),
+    df['gmm_label']
+)
+
+print(f"\nCohen's Kappa (rule-based vs GMM): {kappa:.3f}")
