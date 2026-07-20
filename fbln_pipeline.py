@@ -368,3 +368,113 @@ plt.savefig('outputs/fig7_calibration.png', dpi=150, bbox_inches='tight')
 plt.close()
 
 print("\nAll figures saved to outputs/")
+
+# Binary baseline comparison
+
+print("\nBinary baseline comparison")
+
+# Standard binary classification - median split on FBLN1
+df['binary_label'] = (df['FBLN1'] > df['FBLN1'].median()).astype(int)
+df['binary_group'] = df['binary_label'].map({1: 'BINARY_HIGH', 0: 'BINARY_LOW'})
+
+# Survival separation - binary split
+binary_high = df[df['binary_label'] == 1]
+binary_low  = df[df['binary_label'] == 0]
+
+binary_result = logrank_test(
+    binary_high['os_months'], binary_low['os_months'],
+    event_observed_A=binary_high['os_event'],
+    event_observed_B=binary_low['os_event']
+)
+
+print(f"\n  Binary HIGH vs LOW log-rank p={binary_result.p_value:.4f}")
+print(f"  Binary HIGH event rate: {binary_high['os_event'].mean():.1%}")
+print(f"  Binary LOW event rate:  {binary_low['os_event'].mean():.1%}")
+
+# Framework category distribution within each binary group
+print("\n  Category distribution within BINARY_HIGH:")
+high_dist = (df[df['binary_label'] == 1]['category']
+             .value_counts(normalize=True)
+             .mul(100).round(1))
+for cat, pct in high_dist.items():
+    print(f"    {cat:<35} {pct:.1f}%")
+
+print("\n  Category distribution within BINARY_LOW:")
+low_dist = (df[df['binary_label'] == 0]['category']
+            .value_counts(normalize=True)
+            .mul(100).round(1))
+for cat, pct in low_dist.items():
+    print(f"    {cat:<35} {pct:.1f}%")
+
+# Survival within binary HIGH
+print("\n  Survival heterogeneity within BINARY_HIGH:")
+for cat in CATEGORY_ORDER:
+    sub = df[(df['binary_label'] == 1) & (df['category'] == cat)]
+    if len(sub) < 10:
+        continue
+    event_rate     = sub['os_event'].mean()
+    median_surv    = sub.loc[sub['os_event']==1, 'os_months'].median()
+    print(f"    {cat:<35} n={len(sub):>4}  "
+          f"event rate={event_rate:.1%}  "
+          f"median survival={median_surv:.0f} months")
+
+# Pairwise log-rank within binary HIGH
+print("\n  Pairwise log-rank within BINARY_HIGH "
+      "(HC_FAVOURABLE vs other categories):")
+ref_hc = df[(df['binary_label'] == 1) &
+            (df['category'] == 'HIGH_CONFIDENCE_FAVOURABLE')]
+for cat in ['HIGH_CONFIDENCE_UNFAVOURABLE', 'CONTROVERSY', 'AMBIGUITY']:
+    grp = df[(df['binary_label'] == 1) & (df['category'] == cat)]
+    if len(grp) < 10 or len(ref_hc) < 10:
+        continue
+    result = logrank_test(
+        ref_hc['os_months'], grp['os_months'],
+        event_observed_A=ref_hc['os_event'],
+        event_observed_B=grp['os_event']
+    )
+    sig = '✓' if result.p_value < 0.05 else '✗'
+    print(f"    HC_FAVOURABLE vs {cat:<30} "
+          f"p={result.p_value:.4f} {sig}")
+
+# Figure — KM curves binary vs framework
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+fig.suptitle('Binary Classification vs Uncertainty Framework — Survival Comparison',
+             fontsize=13, fontweight='bold')
+
+# Left: binary split KM
+kmf = KaplanMeierFitter()
+for group, color in [('BINARY_HIGH', '#2ecc71'), ('BINARY_LOW', '#e74c3c')]:
+    sub = df[df['binary_group'] == group]
+    kmf.fit(sub['os_months'], sub['os_event'], label=group)
+    kmf.plot_survival_function(ax=axes[0], ci_show=True,
+                               color=color, linewidth=2.5, ci_alpha=0.1)
+
+axes[0].set_title('Standard Binary Classification')
+axes[0].set_xlabel('Time (months)')
+axes[0].set_ylabel('Survival Probability')
+axes[0].set_xlim(0, 200)
+axes[0].set_ylim(0, 1.05)
+
+# Right: framework six-category KM
+kmf2 = KaplanMeierFitter()
+for cat in CATEGORY_ORDER:
+    sub = df[df['category'] == cat]
+    if len(sub) < 10:
+        continue
+    kmf2.fit(sub['os_months'], sub['os_event'], label=cat)
+    kmf2.plot_survival_function(ax=axes[1], ci_show=False,
+                                color=CATEGORY_COLOURS[cat],
+                                linewidth=2.5)
+
+axes[1].set_title('Uncertainty Framework (6 categories)')
+axes[1].set_xlabel('Time (months)')
+axes[1].set_ylabel('Survival Probability')
+axes[1].set_xlim(0, 200)
+axes[1].set_ylim(0, 1.05)
+axes[1].legend(bbox_to_anchor=(1.01, 1), loc='upper left', fontsize=8)
+
+plt.tight_layout()
+plt.savefig('outputs/fig_binary_vs_framework.png', dpi=150, bbox_inches='tight')
+plt.close()
+
+print("\nBinary comparison figure saved to outputs/fig_binary_vs_framework.png")
