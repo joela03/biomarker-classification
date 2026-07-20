@@ -29,22 +29,87 @@ def infer_gene_roles(df, genes, time_col='os_months', event_col='os_event'):
     return roles
 
 
-def infer_controversy_pairs(df, genes, roles):
+def infer_controversy_pairs(df, genes, roles,
+                            time_col='os_months',
+                            event_col='os_event',
+                            min_events=30):
     """
     Identify gene pairs where one protective and one invasive gene
     show positive expression correlation - creating genuine controversy.
     """
-    protective = [g for g, r in roles.items() if r == 'protective']
-    invasive   = [g for g, r in roles.items() if r == 'invasive']
-    
+    subtypes = df['subtype'].dropna().unique()
+    gene_pairs = [(g1, g2) for i, g1 in enumerate(genes)
+                  for g2 in genes[i+1:]]
+
+    controversy_evidence = {}
+
+    for g1, g2 in gene_pairs:
+        pair_key = (g1, g2)
+        controversy_evidence[pair_key] = {
+            'opposing_subtypes': [],
+            'correlation': round(df[g1].corr(df[g2]), 3),
+            'is_controversy_pair': False
+        }
+
+        for subtype in subtypes:
+            sub = df[df['subtype'] == subtype]
+            if int(sub[event_col].sum()) < min_events:
+                continue
+
+            r1 = run_cox(sub, g1, time_col, event_col, split='median')
+            r2 = run_cox(sub, g2, time_col, event_col, split='median')
+
+            if r1 is None or r2 is None:
+                continue
+
+            # Opposing directions in this subtype
+            g1_protective = r1['HR'] < 1
+            g2_protective = r2['HR'] < 1
+
+            if g1_protective != g2_protective:
+                controversy_evidence[pair_key]['opposing_subtypes'].append({
+                    'subtype':      subtype,
+                    'g1_HR':        r1['HR'],
+                    'g1_p':         r1['p_cox'],
+                    'g2_HR':        r2['HR'],
+                    'g2_p':         r2['p_cox'],
+                    'g1_direction': 'protective' if g1_protective else 'invasive',
+                    'g2_direction': 'protective' if g2_protective else 'invasive',
+                })
+
+        # A pair is a controversy pair if:
+        # They oppose in at least one powered subtype
+        # They are positively correlated (so co-elevation is possible)
+        opp = controversy_evidence[pair_key]['opposing_subtypes']
+        corr = controversy_evidence[pair_key]['correlation']
+
+        if len(opp) > 0 and corr > 0.2:
+            controversy_evidence[pair_key]['is_controversy_pair'] = True
+
+    # Report
+    print("\nSubtype-stratified controversy detection:")
     controversy_pairs = []
-    for p in protective:
-        for i in invasive:
-            corr = df[p].corr(df[i])
-            # Positively correlated opposing signals = controversy space
-            if corr > 0.3:
-                controversy_pairs.append((p, i, round(corr, 3)))
-    
+
+    for (g1, g2), evidence in controversy_evidence.items():
+        corr = evidence['correlation']
+        opp  = evidence['opposing_subtypes']
+        is_c = evidence['is_controversy_pair']
+        flag = '✓ CONTROVERSY PAIR' if is_c else '✗'
+
+        print(f"\n  {g1} vs {g2}  (correlation r={corr})  {flag}")
+        if opp:
+            for sub_ev in opp:
+                print(f"    {sub_ev['subtype']:<15} "
+                      f"{g1}={sub_ev['g1_direction']} "
+                      f"(HR={sub_ev['g1_HR']:.3f}, p={sub_ev['g1_p']:.3f})  "
+                      f"{g2}={sub_ev['g2_direction']} "
+                      f"(HR={sub_ev['g2_HR']:.3f}, p={sub_ev['g2_p']:.3f})")
+        else:
+            print(f"    No powered subtypes show opposing directions")
+
+        if is_c:
+            controversy_pairs.append((g1, g2, corr))
+
     return controversy_pairs
 
 
