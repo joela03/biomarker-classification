@@ -231,3 +231,22 @@ def compare_rule_sets(df, genes, config, original_categories,
         print(f"    {name}: p={result.p_value:.4f} {sig}")
 
     return df
+
+if __name__ == '__main__':
+    from data_loader import load_metabric, TARGET_GENES
+    import pandas as pd
+
+    df   = load_metabric()
+    cats = pd.read_parquet('data/processed/metabric_categories.parquet')
+    df   = df.merge(cats, on='PATIENT_ID', how='left')
+
+    # Build config from survival data
+    config = build_framework_config(df, TARGET_GENES)
+
+    # Compare original vs inferred
+    df_compared = compare_rule_sets(
+        df=df,
+        genes=TARGET_GENES,
+        config=config,
+        original_categories=df['category']
+    )
