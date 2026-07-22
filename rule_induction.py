@@ -9,7 +9,6 @@ from scipy.optimize import brentq
 from sklearn.metrics import adjusted_rand_score
 from sklearn.preprocessing import LabelEncoder
 from lifelines.statistics import logrank_test
-from fbln_pipeline import make_assign_category
 
 def infer_gene_roles(df, genes, time_col='os_months', event_col='os_event'):
     """
@@ -296,6 +295,59 @@ def compare_rule_sets(df, genes, config, original_categories,
         print(f"    {name}: p={result.p_value:.4f} {sig}")
 
     return df
+
+def make_assign_category(df, config):
+    """
+    Returns an assign_category function configured for any gene family.
+    Replaces the hardcoded FBLN-specific version.
+    """
+    genes    = config['genes']
+    roles    = config['roles']
+    boundary = config['boundary_multiplier']
+    oos_mult = config['oos_multiplier']
+    di_thresholds  = config['di_thresholds']
+    controversy_pairs = config['controversy_pairs']
+    
+    # Precompute medians and stds
+    stats = {g: {'med': df[g].median(), 'std': df[g].std()} for g in genes}
+    
+    def assign_category(row):
+        
+        # OUT_OF_SCOPE - extreme outlier on any gene
+        for gene in genes:
+            med = stats[gene]['med']
+            std = stats[gene]['std']
+            if abs(row[gene] - med) > oos_mult * std:
+                return 'OUT_OF_SCOPE'
+        
+        # DATA_INSUFFICIENCY - extreme low on invasive genes simultaneously
+        if all(row[g] < di_thresholds[g]
+               for g in di_thresholds):
+            return 'DATA_INSUFFICIENCY'
+        
+        # AMBIGUITY - all genes near median
+        near_median = all(
+            abs(row[gene] - stats[gene]['med']) < boundary * stats[gene]['std']
+            for gene in genes
+        )
+        if near_median:
+            return 'AMBIGUITY'
+        
+        # CONTROVERSY - protective gene elevated alongside invasive gene
+        for protective_gene, invasive_gene, _ in controversy_pairs:
+            p_above = row[protective_gene] > stats[protective_gene]['med']
+            i_above = row[invasive_gene]   > stats[invasive_gene]['med']
+            if p_above and i_above:
+                return 'CONTROVERSY'
+        
+        # HIGH_CONFIDENCE - subtype-aware split
+        aggressive = {'Basal', 'Her2', 'LumB'}
+        subtype = row.get('subtype', None)
+        if subtype in aggressive:
+            return 'HIGH_CONFIDENCE_UNFAVOURABLE'
+        return 'HIGH_CONFIDENCE_FAVOURABLE'
+    
+    return assign_category
 
 if __name__ == '__main__':
     from data_loader import load_metabric, TARGET_GENES
