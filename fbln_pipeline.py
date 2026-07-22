@@ -24,6 +24,8 @@ from data_loader import (
     CATEGORY_COLOURS, CATEGORY_ORDER, BOUNDARY_MULTIPLIER
 )
 
+from rule_induction import build_framework_config, make_assign_category
+
 warnings.filterwarnings('ignore')
 
 plt.rcParams.update({
@@ -41,14 +43,7 @@ plt.rcParams.update({
 df = load_metabric()
 N  = len(df)
 
-# Compute per-gene statistics used by categorisation
-stats = {
-    gene: {'med': df[gene].median(), 'std': df[gene].std()}
-    for gene in TARGET_GENES
-}
-
-
-# Categorisation id by uncertainty group using statistics
+# Original categorisation based on literature
 
 def assign_category(row):
     f1 = row['FBLN1']
@@ -88,8 +83,21 @@ def assign_category(row):
         return 'HIGH_CONFIDENCE_UNFAVOURABLE'
     return 'HIGH_CONFIDENCE_FAVOURABLE'
 
+# # Stage 0 — infer rules from survival data
+# config = build_framework_config(
+#     df, TARGET_GENES
+# )
 
-df['category'] = df.apply(assign_category, axis=1)
+# # Apply inferred rules to assign categories
+# assign_fn    = make_assign_category(df, config)
+# df['category'] = df.apply(assign_fn, axis=1)
+
+# # Keep stats accessible for figures
+# stats = {
+#     gene: {'med': df[gene].median(), 'std': df[gene].std()}
+#     for gene in TARGET_GENES
+# }
+
 df[['PATIENT_ID', 'category']].to_parquet(
     'data/processed/metabric_categories.parquet', index=False
 )
