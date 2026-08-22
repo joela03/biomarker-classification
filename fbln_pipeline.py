@@ -45,6 +45,11 @@ N  = len(df)
 
 # Original categorisation based on literature
 
+stats = {
+    gene: {'med': df[gene].median(), 'std': df[gene].std()}
+    for gene in TARGET_GENES
+}
+
 def assign_category(row):
     f1 = row['FBLN1']
     f2 = row['FBLN2']
@@ -97,6 +102,8 @@ def assign_category(row):
 #     gene: {'med': df[gene].median(), 'std': df[gene].std()}
 #     for gene in TARGET_GENES
 # }
+
+df['category'] = df.apply(assign_category, axis=1)
 
 df[['PATIENT_ID', 'category']].to_parquet(
     'data/processed/metabric_categories.parquet', index=False
@@ -267,6 +274,12 @@ rf.fit(X_train, y_train)
 
 cv_scores = cross_val_score(rf, X, y, cv=5, scoring='f1_macro')
 y_pred    = rf.predict(X_test)
+proba_all = rf.predict_proba(X)
+max_entropy = np.log2(len(le.classes_))
+df['prediction_entropy'] = [
+    scipy_entropy(p, base=2) for p in proba_all
+]
+df['normalised_entropy'] = df['prediction_entropy'] / max_entropy
 
 print(f"\nRandom Forest — 5-fold CV Macro F1: {cv_scores.mean():.3f} ± {cv_scores.std():.3f}")
 print(classification_report(y_test, y_pred, target_names=le.classes_, digits=3))
