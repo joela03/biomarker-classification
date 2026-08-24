@@ -53,7 +53,7 @@ results_df.to_csv('outputs/survival_endpoint_comparison.csv', index=False)
 
 print("\nSubtype-stratified Cox — OS (all-cause):\n")
 subtypes = ['LumA', 'LumB', 'Her2', 'claudin-low', 'Basal', 'Normal', 'NC']
-
+subtype_rows = []
 for subtype in subtypes:
     sub = df_mb[df_mb['subtype'] == subtype]
     print(f"{subtype} (n={len(sub)})")
@@ -66,7 +66,6 @@ for subtype in subtypes:
         else:
             print(f"  {gene}: insufficient events")
     print()
-
 
 # DSS subtype stratification
 
@@ -81,10 +80,16 @@ if 'dss_event' in df_mb.columns:
                 sig = '*' if result['p_cox'] < 0.05 else ''
                 print(f"  {gene}: HR={result['HR']:.3f}  p={result['p_cox']:.4f}  "
                       f"{result['direction']} {sig}")
+                subtype_rows.append({
+                    'Subtype': subtype, 'Gene': gene,
+                    'Endpoint': 'DSS', **result
+                })
             else:
                 print(f"  {gene}: insufficient events")
         print()
 
+subtype_df = pd.DataFrame(subtype_rows)
+subtype_df.to_csv('outputs/subtype_stratified_results.csv', index=False)
 
 # Triangulation statistics
 
@@ -103,3 +108,4 @@ near_all = (
 
 print(f"Near median (≥1 gene): {near_any.mean()*100:.1f}%")
 print(f"Near median (all 3):   {near_all.mean()*100:.1f}%")
+
