@@ -60,6 +60,10 @@ for subtype in subtypes:
     for gene in TARGET_GENES:
         result = run_cox(sub, gene, 'os_months', 'os_event', split='median')
         if result:
+            subtype_rows.append({
+                'Subtype': subtype, 'Gene': gene,
+                'Endpoint': 'OS', **result
+            })
             sig = '*' if result['p_cox'] < 0.05 else ''
             print(f"  {gene}: HR={result['HR']:.3f}  p={result['p_cox']:.4f}  "
                   f"{result['direction']} {sig}")
