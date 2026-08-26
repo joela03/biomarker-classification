@@ -10,6 +10,55 @@ from sklearn.metrics import adjusted_rand_score
 from sklearn.preprocessing import LabelEncoder
 from lifelines.statistics import logrank_test
 
+def infer_gene_roles_subtype_aware(df, genes, 
+                                    time_col='os_months',
+                                    event_col='os_event',
+                                    min_events=30):
+    """
+    Infers gene roles using subtype-stratified Cox models.
+    A gene is labelled invasive if HR>1 in the majority of
+    powered subtypes, protective if HR<1 in the majority,
+    and unclear if directions are mixed or insufficient.
+    """
+    subtypes = df['subtype'].dropna().unique()
+    
+    roles = {}
+    for gene in genes:
+        invasive_count   = 0
+        protective_count = 0
+        unclear_count    = 0
+        
+        for subtype in subtypes:
+            sub = df[df['subtype'] == subtype]
+            if int(sub[event_col].sum()) < min_events:
+                unclear_count += 1
+                continue
+            
+            result = run_cox(sub, gene, time_col, event_col, split='median')
+            if result is None:
+                unclear_count += 1
+            elif result['HR'] > 1:
+                invasive_count += 1
+            else:
+                protective_count += 1
+        
+        total_powered = invasive_count + protective_count
+        
+        if total_powered == 0:
+            roles[gene] = 'unclear'
+        elif invasive_count > protective_count:
+            roles[gene] = 'invasive'
+        elif protective_count > invasive_count:
+            roles[gene] = 'protective'
+        else:
+            roles[gene] = 'unclear'  # tied
+        
+        print(f"  {gene}: invasive={invasive_count}, "
+              f"protective={protective_count}, "
+              f"unclear={unclear_count} → {roles[gene]}")
+    
+    return roles
+
 def infer_gene_roles(df, genes, time_col='os_months', event_col='os_event'):
     """
     Run Cox models per gene to infer protective vs invasive direction.
@@ -157,7 +206,7 @@ def build_framework_config(df, genes,
     print(f"Inferring rules for gene family: {genes}")
     
     # Gene roles from survival
-    roles = infer_gene_roles(df, genes, time_col, event_col)
+    roles = infer_gene_roles_subtype_aware(df, genes, time_col, event_col)
     print(f"  Inferred roles: {roles}")
     
     # Controversy pairs
@@ -350,20 +399,48 @@ def make_assign_category(df, config):
     return assign_category
 
 if __name__ == '__main__':
-    from data_loader import load_metabric, TARGET_GENES
     import pandas as pd
+    from data_loader import load_metabric, run_cox, TARGET_GENES
 
-    df   = load_metabric()
-    cats = pd.read_parquet('data/processed/metabric_categories.parquet')
-    df   = df.merge(cats, on='PATIENT_ID', how='left')
+    # Load clinical data from cached METABRIC
+    df_clinical = load_metabric()
 
-    # Build config from survival data
-    config = build_framework_config(df, TARGET_GENES)
-
-    # Compare original vs inferred
-    df_compared = compare_rule_sets(
-        df=df,
-        genes=TARGET_GENES,
-        config=config,
-        original_categories=df['category']
+    # Load MMP expression directly from raw file
+    mmp_genes = ['MMP11', 'MMP7', 'MMP15']
+    mrna = pd.read_csv(
+        'brca_metabric/data_mrna_illumina_microarray.txt',
+        sep='\t', index_col=0, low_memory=False
     )
+
+    # Check availability
+    available = [g for g in mmp_genes if g in mrna.index]
+    print(f"Available MMP genes: {available}")
+
+    if 'Entrez_Gene_Id' in mrna.columns:
+        mrna = mrna.drop(columns=['Entrez_Gene_Id'])
+
+    # Filter to MMP genes and transpose
+    mmp_expr = mrna.loc[mrna.index.isin(available)].T
+    mmp_expr.index.name = 'PATIENT_ID'
+    mmp_expr = mmp_expr.reset_index()
+
+    # Merge with clinical data
+    df_mmp = mmp_expr.merge(
+        df_clinical[['PATIENT_ID', 'os_months', 'os_event',
+                     'subtype'] +
+                    [c for c in df_clinical.columns
+                     if c in ['rfs_months', 'rfs_event',
+                               'dss_event']]],
+        on='PATIENT_ID', how='inner'
+    )
+    df_mmp = df_mmp.dropna(subset=available + ['os_months', 'os_event'])
+    df_mmp = df_mmp.reset_index(drop=True)
+
+    print(f"MMP dataset: {len(df_mmp)} patients")
+    print(f"Columns: {list(df_mmp.columns)}")
+
+    # Run Stage 0
+    config = build_framework_config(df_mmp, available)
+    print(f"\nInferred roles:      {config['roles']}")
+    print(f"Controversy pairs:   {config['controversy_pairs']}")
+    print(f"Boundary multiplier: {config['boundary_multiplier']}")
