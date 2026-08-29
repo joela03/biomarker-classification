@@ -11,6 +11,7 @@ import seaborn as sns
 import warnings
 import shap
 
+from scipy.stats import entropy as scipy_entropy
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import LabelEncoder
@@ -18,6 +19,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.calibration import calibration_curve
 from lifelines import KaplanMeierFitter
 from lifelines.statistics import logrank_test
+from matplotlib.patches import Patch
 
 from data_loader import (
     load_metabric, TARGET_GENES,
@@ -306,32 +308,49 @@ plt.close()
 explainer   = shap.TreeExplainer(rf)
 shap_values = explainer.shap_values(X_test[:200])
 
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-fig.suptitle('SHAP Feature Attributions', fontsize=13, fontweight='bold')
+gene_patches = [
+    Patch(facecolor='#1f77b4', label='FBLN1'),
+    Patch(facecolor='#ff7f0e', label='FBLN2'),
+    Patch(facecolor='#2ca02c', label='FBLN5'),
+]
+
+# Figure 6a: Mean SHAP importance per category 
+
+fig, ax = plt.subplots(figsize=(10, 5))
+fig.suptitle('SHAP Feature Attributions — Mean Importance per Category',
+             fontsize=12, fontweight='bold')
 
 mean_shap = np.array([np.abs(shap_values[:, :, i]).mean(axis=0)
                       for i in range(len(le.classes_))])
 shap_df = pd.DataFrame(mean_shap, index=le.classes_, columns=TARGET_GENES)
-shap_df.T.plot(kind='bar', ax=axes[0],
+shap_df.T.plot(kind='bar', ax=ax,
                color=[CATEGORY_COLOURS[c] for c in le.classes_],
                edgecolor='white', width=0.7)
-axes[0].set_xlabel('Gene')
-axes[0].set_ylabel('Mean |SHAP|')
-axes[0].set_title('Mean Feature Importance per Category')
-axes[0].legend(title='Category', fontsize=8, bbox_to_anchor=(1, 1))
-axes[0].tick_params(axis='x', rotation=0)
+ax.set_xlabel('Gene')
+ax.set_ylabel('Mean |SHAP|')
+ax.tick_params(axis='x', rotation=0)
+ax.legend(title='Category', bbox_to_anchor=(1.01, 1),
+          loc='upper left', fontsize=8, title_fontsize=9)
 
-example_cats = ['HIGH_CONFIDENCE_FAVOURABLE', 'HIGH_CONFIDENCE_UNFAVOURABLE',
+plt.tight_layout()
+plt.savefig('outputs/fig6a_shap_importance.png', dpi=150, bbox_inches='tight')
+plt.close()
+
+# Figure 6b: Per-patient SHAP waterfall 
+
+fig, ax2 = plt.subplots(figsize=(12, 6))
+fig.suptitle('SHAP Contributions — Example Patients per Category',
+             fontsize=12, fontweight='bold')
+
+example_cats   = ['HIGH_CONFIDENCE_FAVOURABLE', 'HIGH_CONFIDENCE_UNFAVOURABLE',
                   'CONTROVERSY', 'AMBIGUITY']
 y_test_labels  = le.inverse_transform(y_test)
 example_colors = ['#2ecc71', '#e67e22', '#e74c3c', '#f39c12']
 gene_colors    = ['#3498db', '#e67e22', '#1abc9c']
-bar_height     = 0.2
-y_positions    = [0.78, 0.54, 0.30, 0.06]
+bar_height     = 0.22
+y_positions    = [0.82, 0.58, 0.34, 0.10]
 
-ax2 = axes[1]
-ax2.set_title('SHAP Contributions — Example Patients')
-
+legend_handles = []
 for i, (cat, ypos, col) in enumerate(zip(example_cats, y_positions, example_colors)):
     idx_list = np.where(y_test_labels == cat)[0]
     if len(idx_list) == 0:
@@ -340,27 +359,33 @@ for i, (cat, ypos, col) in enumerate(zip(example_cats, y_positions, example_colo
     cat_idx = list(le.classes_).index(cat)
     sv      = shap_values[idx, :, cat_idx]
     left    = 0
-    for gene, val, gcol in zip(TARGET_GENES, sv, gene_colors):
-        ax2.barh(ypos, val, height=bar_height, left=left, color=gcol,
-                 edgecolor='white', linewidth=0.8,
-                 label=gene if i == 0 else '')
-        if abs(val) > 0.01:
+    for j, (gene, val, gcol) in enumerate(zip(TARGET_GENES, sv, gene_colors)):
+        ax2.barh(ypos, val, height=bar_height, left=left,
+                 color=gcol, edgecolor='white', linewidth=0.8)
+        if i == 0:
+            legend_handles.append(
+                plt.Rectangle((0, 0), 1, 1, fc=gcol, label=gene)
+            )
+        if abs(val) > 0.005:
             ax2.text(left + val/2, ypos, f'{gene}\n{val:+.2f}',
-                     ha='center', va='center', fontsize=7,
+                     ha='center', va='center', fontsize=8,
                      fontweight='bold', color='white')
         left += val
-    display_name = cat.replace('HIGH_CONFIDENCE_', 'HC_')
-    ax2.text(-0.35, ypos, display_name, ha='right', va='center',
-             fontsize=8, fontweight='bold', color=col)
 
-ax2.axvline(0, color='black', linewidth=1)
-ax2.set_xlabel('SHAP Contribution')
-ax2.set_xlim(-0.5, 0.5)
+    display_name = cat.replace('HIGH_CONFIDENCE_', 'HC_')
+    ax2.text(-0.15, ypos, display_name, ha='right', va='center',
+             fontsize=9, fontweight='bold', color=col)
+
+ax2.axvline(0, color='black', linewidth=1.2)
+ax2.set_xlabel('SHAP Contribution', fontsize=10)
+ax2.set_xlim(-0.20, 0.80)
+ax2.set_ylim(-0.05, 1.05)
 ax2.set_yticks([])
-ax2.legend(title='Gene', loc='lower right', fontsize=8)
+ax2.legend(handles=legend_handles, title='Gene',
+           loc='upper left', fontsize=9, title_fontsize=10)
 
 plt.tight_layout()
-plt.savefig('outputs/fig6_shap.png', dpi=150, bbox_inches='tight')
+plt.savefig('outputs/fig6b_shap_waterfall.png', dpi=150, bbox_inches='tight')
 plt.close()
 
 
@@ -499,3 +524,45 @@ plt.savefig('outputs/fig_binary_vs_framework.png', dpi=150, bbox_inches='tight')
 plt.close()
 
 print("\nBinary comparison figure saved to outputs/fig_binary_vs_framework.png")
+
+print("\nMean prediction entropy by category:")
+print(f"  {'Category':<35} {'Mean H':>8} {'Normalised':>12}")
+for cat in CATEGORY_ORDER:
+    sub = df[df['category'] == cat]
+    if len(sub) < 5:
+        continue
+    mean_h  = sub['prediction_entropy'].mean()
+    mean_nh = sub['normalised_entropy'].mean()
+    print(f"  {cat:<35} {mean_h:>8.3f} {mean_nh:>12.3f}")
+
+fig, ax = plt.subplots(figsize=(10, 5))
+fig.suptitle('Prediction Entropy by Uncertainty Category',
+             fontsize=13, fontweight='bold')
+
+entropy_data = [
+    df[df['category'] == cat]['prediction_entropy'].values
+    for cat in CATEGORY_ORDER
+    if cat in df['category'].values
+]
+labels = [cat.replace('HIGH_CONFIDENCE_', 'HC_')
+          for cat in CATEGORY_ORDER
+          if cat in df['category'].values]
+colors = [CATEGORY_COLOURS[cat] for cat in CATEGORY_ORDER
+          if cat in df['category'].values]
+
+bp = ax.boxplot(entropy_data, labels=labels, patch_artist=True,
+                medianprops={'color': 'black', 'linewidth': 2})
+for patch, color in zip(bp['boxes'], colors):
+    patch.set_facecolor(color)
+    patch.set_alpha(0.7)
+
+ax.axhline(np.log2(6), color='red', linestyle='--', alpha=0.5,
+           linewidth=1, label=f'Max entropy (log₂6 ≈ 2.585)')
+ax.set_ylabel('Shannon Entropy (bits)')
+ax.set_xlabel('Uncertainty Category')
+ax.tick_params(axis='x', rotation=25)
+ax.legend(fontsize=9)
+plt.tight_layout()
+plt.savefig('outputs/fig_entropy_by_category.png',
+            dpi=150, bbox_inches='tight')
+plt.close()
