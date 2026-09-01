@@ -13,6 +13,7 @@ from lifelines import KaplanMeierFitter
 from lifelines.statistics import logrank_test
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import adjusted_rand_score
+from sklearn.tree import export_text
 
 warnings.filterwarnings('ignore')
 
@@ -24,12 +25,18 @@ df   = load_metabric()
 cats = pd.read_parquet('data/processed/metabric_categories.parquet')
 df   = df.merge(cats, on='PATIENT_ID', how='left')
 
-# Encode subtype
-le_sub = LabelEncoder()
-df['subtype_encoded'] = le_sub.fit_transform(df['subtype'].fillna('Unknown'))
+# Encode subtype with one-hot encoding
+subtype_dummies = pd.get_dummies(
+    df['subtype'], prefix='subtype', drop_first=False
+).astype(np.float32) 
+feature_cols = TARGET_GENES + list(subtype_dummies.columns)
+df_tree = pd.concat([df[TARGET_GENES].astype(np.float32), subtype_dummies], axis=1)
 
-FEATURES = TARGET_GENES + ['subtype_encoded']
-X      = df[FEATURES].to_numpy().astype(np.float32)
+X = df_tree[feature_cols].values.astype(np.float32)
+feature_names = feature_cols
+
+# FEATURES = TARGET_GENES + ['subtype_encoded']
+# X      = df[FEATURES].to_numpy().astype(np.float32)
 y_surv = Surv.from_dataframe('os_event', 'os_months', df)
 
 tree = SurvivalTree(
@@ -57,6 +64,10 @@ for leaf in leaves[1:]:
     )
     sig = 'significant' if result.p_value < 0.05 else 'insignificant'
     print(f"  Leaf {ref_leaf} vs {leaf} (n={len(grp)}): p={result.p_value:.4f} {sig}")
+
+for leaf in sorted(df['tree_leaf'].unique()):
+    sub = df[df['tree_leaf'] == leaf]
+    print(f"Leaf {leaf}: n={len(sub)}, events={int(sub['os_event'].sum())}")
 
 # Cross-tabulation vs rule-based categories
 print("\nTree leaf vs rule-based category:")
