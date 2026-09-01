@@ -144,53 +144,66 @@ print(f"  Near median (all 3):   {near_all_pct:.1f}%")
 
 
 # Figure 1: Category distribution
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-fig.suptitle('Uncertainty Category Distribution — METABRIC (FBLN1, FBLN2, FBLN5)',
-             fontsize=13, fontweight='bold')
-
 cats   = [c for c in CATEGORY_ORDER if c in cat_counts.index]
-counts = [cat_counts[c] for c in cats]
+counts = [int(cat_counts[c]) for c in cats]
+pcts   = [c / N * 100 for c in counts]
 colors = [CATEGORY_COLOURS[c] for c in cats]
+labels = [c.replace('HIGH_CONFIDENCE', 'HC').replace('_', '_\n') for c in cats]
 
-bars = axes[0].bar(cats, counts, color=colors, edgecolor='white', linewidth=1.5, width=0.6)
-axes[0].set_xlabel('Uncertainty Category')
-axes[0].set_ylabel('Number of Patients')
-axes[0].set_title('Patient Count per Category')
-axes[0].tick_params(axis='x', rotation=25)
-for bar, count in zip(bars, counts):
-    axes[0].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 12,
-                 f'{count}\n({count/N*100:.1f}%)', ha='center', fontsize=9, fontweight='bold')
+fig, ax = plt.subplots(figsize=(10.5, 5.5))
+bars = ax.bar(range(len(cats)), counts, color=colors, edgecolor='black',
+              linewidth=0.6, width=0.55, zorder=3)
 
-axes[1].pie(counts, labels=cats, colors=colors, autopct='%1.1f%%',
-            startangle=140, pctdistance=0.75,
-            wedgeprops={'edgecolor': 'white', 'linewidth': 2})
-axes[1].set_title('Proportion per Category')
+ax.set_ylim(0, max(counts) * 1.22)
+
+for bar, count, pct in zip(bars, counts, pcts):
+    ax.annotate(f'{count}\n({pct:.1f}%)',
+                xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                xytext=(0, 6), textcoords='offset points',
+                ha='center', va='bottom', fontsize=10.5, fontweight='bold')
+
+ax.set_xticks(range(len(cats)))
+ax.set_xticklabels(labels, fontsize=10)
+ax.set_xlabel('Uncertainty Category')
+ax.set_ylabel('Number of Patients')
+ax.set_title(f'Uncertainty Category Distribution — METABRIC (FBLN1, FBLN2, FBLN5), n = {N:,}',
+             fontsize=12.5, fontweight='bold', pad=14)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+ax.grid(axis='y', linestyle='--', alpha=0.3, zorder=0)
+ax.set_axisbelow(True)
 
 plt.tight_layout()
-plt.savefig('outputs/fig1_category_distribution.png', dpi=150, bbox_inches='tight')
+plt.savefig('outputs/fig1_category_distribution.png', dpi=300, bbox_inches='tight')
 plt.close()
 
 
 # Figure 2: Expression profiles by category
 
-fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-fig.suptitle('Biomarker Expression Profiles by Uncertainty Category', fontsize=13, fontweight='bold')
+fig, axes = plt.subplots(3, 1, figsize=(9, 13.5))
+fig.suptitle('Biomarker Expression Profiles by Uncertainty Category',
+             fontsize=15, fontweight='bold', y=0.995)
+
+wrapped_labels = [c.replace('HIGH_CONFIDENCE', 'HC').replace('_', '_\n') for c in CATEGORY_ORDER]
 
 for ax, gene in zip(axes, TARGET_GENES):
     sns.boxplot(data=df, x='category', y=gene, order=CATEGORY_ORDER,
-                palette=CATEGORY_COLOURS, ax=ax, width=0.55, linewidth=1.2,
+                palette=CATEGORY_COLOURS, ax=ax, width=0.5, linewidth=1.2,
                 flierprops={'marker': 'o', 'markersize': 2, 'alpha': 0.3})
-    ax.set_title(f'{gene} Expression')
+    ax.set_title(f'{gene} Expression', fontsize=13)
     ax.set_xlabel('')
-    ax.set_ylabel('Expression (log2)')
-    ax.tick_params(axis='x', rotation=30)
+    ax.set_ylabel('Expression (log2)', fontsize=12)
+    ax.set_xticks(range(len(CATEGORY_ORDER)))
+    ax.set_xticklabels(wrapped_labels, rotation=0, fontsize=10.5)
+    ax.tick_params(axis='y', labelsize=10.5)
+    ymin, ymax = ax.get_ylim()
+    ax.set_ylim(ymin, ymax + (ymax - ymin) * 0.12)  # headroom for the legend
     ax.axhline(df[gene].median(), color='navy', linestyle='--', alpha=0.4, linewidth=1, label='Median')
-    ax.legend(fontsize=8)
+    ax.legend(fontsize=9, loc='upper right')
 
-plt.tight_layout()
-plt.savefig('outputs/fig2_expression_by_category.png', dpi=150, bbox_inches='tight')
+plt.tight_layout(rect=[0, 0, 1, 0.98])
+plt.savefig('outputs/fig2_expression_by_category.png', dpi=300, bbox_inches='tight')
 plt.close()
-
 
 # Figure 3: Kaplan-Meier + between-category log-rank
 
@@ -289,19 +302,27 @@ print(classification_report(y_test, y_pred, target_names=le.classes_, digits=3))
 
 # Figure 5: Confusion matrix
 
-fig, ax = plt.subplots(figsize=(8, 6))
+short_labels = [c.replace('HIGH_CONFIDENCE_FAVOURABLE', 'HC_FAV')
+                 .replace('HIGH_CONFIDENCE_UNFAVOURABLE', 'HC_UNFAV')
+                 .replace('DATA_INSUFFICIENCY', 'DATA_INSUF')
+                 .replace('OUT_OF_SCOPE', 'OUT_OF_SCOPE')
+                for c in le.classes_]
+
+fig, ax = plt.subplots(figsize=(9, 7.5))
 cm = confusion_matrix(y_test, y_pred)
 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-            xticklabels=le.classes_, yticklabels=le.classes_,
-            linewidths=0.5, ax=ax)
-ax.set_xlabel('Predicted')
-ax.set_ylabel('True')
-ax.set_title('Confusion Matrix — Random Forest (rule-based labels)')
-plt.xticks(rotation=30)
+            xticklabels=short_labels, yticklabels=short_labels,
+            linewidths=0.5, ax=ax, annot_kws={'fontsize': 11},
+            cbar_kws={'label': 'Number of patients'})
+ax.set_xlabel('Predicted', fontsize=12)
+ax.set_ylabel('True', fontsize=12)
+ax.set_title('Confusion Matrix — Random Forest (rule-based labels)', fontsize=13, pad=14)
+ax.tick_params(axis='x', rotation=30, labelsize=10)
+ax.tick_params(axis='y', rotation=0, labelsize=10)
+plt.setp(ax.get_xticklabels(), ha='right')
 plt.tight_layout()
-plt.savefig('outputs/fig5_confusion_matrix.png', dpi=150, bbox_inches='tight')
+plt.savefig('outputs/fig5_confusion_matrix.png', dpi=300, bbox_inches='tight')
 plt.close()
-
 
 # Figure 6: SHAP 
 
